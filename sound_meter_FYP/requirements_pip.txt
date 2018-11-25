@@ -1,0 +1,2 @@
+EasyProcess==0.2.3
+PyAudio==0.2.11
