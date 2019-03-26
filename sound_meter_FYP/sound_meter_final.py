@@ -4,16 +4,21 @@ import pyaudio
 import spl_lib as spl
 from scipy.signal import lfilter
 import numpy
+import pika
+import time
 
-## For web browser handling
-#from selenium import webdriver
+# start a connection with localhost
+connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+channel = connection.channel()
+# this is a queue named hello
+channel.queue_declare(queue='hello')
 
 
 CHUNKS = [8192, 9600]       # originally for CD quality is 4096 but if it fails then put in more
 CHUNK = CHUNKS[1]
 FORMAT = pyaudio.paInt16    # 16 bit
 CHANNEL = 1    # 1 for mono. 2 for stereo
-
+STATUS = "HELLO"
 
 RATES = [44300, 48000] #mic rates
 RATE = RATES[1]
@@ -53,8 +58,8 @@ def update_text(path, content):
 def click(id):
     driver.find_element_by_id(id).click()
 
-def open_html(path):
-    driver.get(path)
+# def open_html(path):
+#     driver.get(path)
 
 def update_max_if_new_is_larger_than_max(new, max):
     print("update_max_if_new_is_larger_than_max called")
@@ -83,7 +88,22 @@ def listen(old=0, error_count=0, min_decibel=100, max_decibel=0):
             if is_meaningful(old, new_decibel):
                 old = new_decibel
                 print('Decibel: {:+.2f} dB'.format(new_decibel))
-                
+                # print status according to decibel output
+                if (new_decibel < 40):
+                    STATUS = "LOW"
+                elif(new_decibel<=70 ):
+                    STATUS = "MEDIUM"
+                else:
+                    STATUS = "HIGH"
+                print(STATUS)
+                time.sleep(2)
+
+            #sending hello world with routing key which refers to queue
+            # channel.basic_publish(exchange='',
+            #                       routing_key='hello',
+            #                       body=STATUS)
+            # print(" [x] Sent", STATUS)
+            # time.sleep(5)
 
     stream.stop_stream()
     stream.close()
