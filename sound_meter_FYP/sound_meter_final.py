@@ -4,32 +4,35 @@ import pyaudio
 import spl_lib as spl
 from scipy.signal import lfilter
 import numpy
-import pika
 import time
-
-# start a connection with localhost
-connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
-channel = connection.channel()
-# this is a queue named hello
-channel.queue_declare(queue='hello')
+import pika
 
 
-CHUNKS = [8192, 9600]       # originally for CD quality is 4096 but if it fails then put in more
+CHUNKS = [4096, 4800]       # originally for CD quality is 4096 but if it fails then put in more
 CHUNK = CHUNKS[1]
+#CHUNK = 256
 FORMAT = pyaudio.paInt16    # 16 bit
 CHANNEL = 1    # 1 for mono. 2 for stereo
 STATUS = "HELLO"
 
 RATES = [44300, 48000] #mic rates
 RATE = RATES[1]
+#RATE = 44000
 
 NUMERATOR, DENOMINATOR = spl.A_weighting(RATE)
+
+# start a connection with localhost
+credentials = pika.PlainCredentials('guest', 'guest')
+connection = pika.BlockingConnection(pika.ConnectionParameters('172.17.9.74', 5672, '/', credentials))
+channel = connection.channel()
+
+# this is a queue named hello
+channel.queue_declare('decibel')
 
 def get_path(base, tail, head=''):
     return os.path.join(base, tail) if head == '' else get_path(head, get_path(base, tail)[1:])
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-#HTML_PATH = get_path(BASE_DIR, 'html/main.html', 'file:///')
 SINGLE_DECIBEL_FILE_PATH = get_path(BASE_DIR, 'decibel_data/single_decibel.txt')
 MAX_DECIBEL_FILE_PATH = get_path(BASE_DIR, 'decibel_data/max_decibel.txt')
 
@@ -46,21 +49,6 @@ stream = pa.open(format = FORMAT,
 def is_meaningful(old, new):
     return abs(old - new) > 3
 
-def update_text(path, content):
-    try:
-        f = open(path, 'w')
-    except IOError as e:
-        print(e)
-    else:
-        f.write(content)
-        f.close()
-
-def click(id):
-    driver.find_element_by_id(id).click()
-
-# def open_html(path):
-#     driver.get(path)
-
 def update_max_if_new_is_larger_than_max(new, max):
     print("update_max_if_new_is_larger_than_max called")
     if new > max:
@@ -72,12 +60,16 @@ def update_max_if_new_is_larger_than_max(new, max):
         return max
 
 
-def listen(old=0, error_count=0, min_decibel=100, max_decibel=0):
+def listen():
+    old=0
+    error_count=0
+    min_decibel=100
+    max_decibel=0
     print("Listening")
     while True:
         try:
             ## read() returns string which needs to convert into array.
-            block = stream.read(CHUNK)
+            block = stream.read(CHUNK, exception_on_overflow = False)
         except IOError as e:
             error_count += 1
             print(" (%d) Error recording: %s" % (error_count, e))
@@ -87,27 +79,28 @@ def listen(old=0, error_count=0, min_decibel=100, max_decibel=0):
             new_decibel = 20*numpy.log10(spl.rms_flat(y))
             if is_meaningful(old, new_decibel):
                 old = new_decibel
-                print('Decibel: {:+.2f} dB'.format(new_decibel))
+                channel.basic_publish(exchange='',
+                          routing_key='decibel',
+                          body=str(new_decibel))
+                print('dB sent: ', str(new_decibel))
+                # print('Decibel: {:+.2f} dB'.format(new_decibel))
+
                 # print status according to decibel output
-                if (new_decibel < 40):
-                    STATUS = "LOW"
-                elif(new_decibel<=70 ):
-                    STATUS = "MEDIUM"
-                else:
-                    STATUS = "HIGH"
-                print(STATUS)
+                #if (new_decibel < 40):
+                #    STATUS = "LOW"
+                #elif(new_decibel<=70 ):
+                #    STATUS = "MEDIUM"
+                #else:
+                #    STATUS = "HIGH"
+                #print(STATUS)
                 time.sleep(2)
 
-            #sending hello world with routing key which refers to queue
-            # channel.basic_publish(exchange='',
-            #                       routing_key='hello',
-            #                       body=STATUS)
-            # print(" [x] Sent", STATUS)
-            # time.sleep(5)
 
     stream.stop_stream()
     stream.close()
     pa.terminate()
+    # close pika connection
+    connection.close()
 
 
 
