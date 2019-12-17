@@ -23,7 +23,7 @@ NUMERATOR, DENOMINATOR = spl.A_weighting(RATE)
 
 # start a connection with localhost
 credentials = pika.PlainCredentials('guest', 'guest')
-connection = pika.BlockingConnection(pika.ConnectionParameters('172.17.9.74', 5672, '/', credentials))
+connection = pika.BlockingConnection(pika.ConnectionParameters('172.17.14.179', 5672, '/', credentials))
 channel = connection.channel()
 
 # this is a queue named hello
