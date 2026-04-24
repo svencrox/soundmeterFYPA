@@ -1,2 +1,3 @@
 .venv
 /sound_meter_FYP/__pycache__
+/logs/*.csv

@@ -4,6 +4,8 @@ import spl_lib as spl
 from scipy.signal import lfilter
 import numpy
 import time
+import csv
+import os
 
 CHUNK = 4800
 FORMAT = pyaudio.paInt16
@@ -32,8 +34,21 @@ stream = pa.open(format=FORMAT,
 BAR_WIDTH = 40
 DB_MIN = 30
 DB_MAX = 100
-DB_FLOOR = 10       # below this is treated as silence / mic disconnect
+DB_FLOOR = 10         # below this is treated as silence / mic disconnect
 CHANGE_THRESHOLD = 3  # dB — set to 0 to display every reading
+
+LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'logs')
+
+
+def get_log_writer():
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    filename = os.path.join(LOGS_DIR, time.strftime("%Y-%m-%d") + ".csv")
+    is_new = not os.path.exists(filename)
+    f = open(filename, 'a', newline='')
+    writer = csv.writer(f)
+    if is_new:
+        writer.writerow(['timestamp', 'decibel', 'status'])
+    return f, writer
 
 
 def status_label(db):
@@ -55,28 +70,35 @@ def render_bar(db):
 
 
 def listen():
+    log_file, log_writer = get_log_writer()
+    print(f"Logging to: logs/{time.strftime('%Y-%m-%d')}.csv")
     print("Listening... (Ctrl+C to stop)\n")
     error_count = 0
     last_decibel = None
-    while True:
-        try:
-            block = stream.read(CHUNK, exception_on_overflow=False)
-        except IOError as e:
-            error_count += 1
-            print(f"\n({error_count}) Error recording: {e}")
-        else:
-            decoded_block = numpy.frombuffer(block, dtype='int16')
-            y = lfilter(NUMERATOR, DENOMINATOR, decoded_block)
-            decibel = 20 * numpy.log10(spl.rms_flat(y))
+    try:
+        while True:
+            try:
+                block = stream.read(CHUNK, exception_on_overflow=False)
+            except IOError as e:
+                error_count += 1
+                print(f"\n({error_count}) Error recording: {e}")
+            else:
+                decoded_block = numpy.frombuffer(block, dtype='int16')
+                y = lfilter(NUMERATOR, DENOMINATOR, decoded_block)
+                decibel = 20 * numpy.log10(spl.rms_flat(y))
 
-            if not numpy.isfinite(decibel) or decibel < DB_FLOOR:
-                print(f"\r{time.strftime('%H:%M:%S')} | {'░' * BAR_WIDTH} | -- SILENCE / NO SIGNAL --      ", end="", flush=True)
-                last_decibel = None
-                continue
+                if not numpy.isfinite(decibel) or decibel < DB_FLOOR:
+                    print(f"\r{time.strftime('%H:%M:%S')} | {'░' * BAR_WIDTH} | -- SILENCE / NO SIGNAL --      ", end="", flush=True)
+                    last_decibel = None
+                    continue
 
-            if last_decibel is None or abs(decibel - last_decibel) >= CHANGE_THRESHOLD:
-                last_decibel = decibel
-                print(render_bar(decibel), end="", flush=True)
+                if last_decibel is None or abs(decibel - last_decibel) >= CHANGE_THRESHOLD:
+                    last_decibel = decibel
+                    log_writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), f"{decibel:.2f}", status_label(decibel).strip()])
+                    log_file.flush()
+                    print(render_bar(decibel), end="", flush=True)
+    finally:
+        log_file.close()
 
 
 if __name__ == '__main__':
